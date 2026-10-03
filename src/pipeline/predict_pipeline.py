@@ -8,9 +8,11 @@ from src.exception import CustomException
 from src.logger import logging
 from src.utils import load_object
 
-# Feature columns expected by the saved preprocessor, with a suitable
-# default for each one. Any missing key in the incoming input data is
-# replaced by its default value before prediction.
+# Feature columns expected by the saved preprocessor. The value of each
+# entry is only used to infer the column type: str -> categorical/text
+# column, anything else -> numerical column. Missing values are kept as
+# NaN so the imputers fitted during training can fill them with the exact
+# same statistics used while the model was trained.
 DEFAULT_VALUES = {
     # numerical / boolean flag columns
     "statuses_count": 0,
@@ -47,28 +49,36 @@ LABELS = {0: "Real Account", 1: "Fake Account"}
 def prepare_input_data(input_data: dict) -> pd.DataFrame:
     """
     Convert a dict of raw account attributes into a single-row DataFrame
-    that matches the schema expected by the saved preprocessor. Missing
-    or invalid values are replaced with suitable defaults.
+    that matches the schema expected by the saved preprocessor.
+
+    Missing values are kept as NaN so that the imputers fitted during
+    training apply the same statistics they learned on the training data.
+    Treating missing categorical values as "" instead would produce
+    unseen categories that get one-hot encoded to all zeros, which pushes
+    the input far outside the training distribution.
+
+    Empty or whitespace-only strings are treated as missing for the same
+    reason; present values are coerced to the column's expected type.
     """
     try:
         row = {}
-        for column, default in DEFAULT_VALUES.items():
-            value = input_data.get(column, default)
+        for column, type_hint in DEFAULT_VALUES.items():
+            value = input_data.get(column)
 
             if value is None or (isinstance(value, float) and np.isnan(value)):
-                value = default
-
-            if isinstance(default, str):
+                row[column] = np.nan
+            elif isinstance(value, str) and not value.strip():
+                row[column] = np.nan
+            elif isinstance(type_hint, str):
                 row[column] = str(value)
             else:
                 try:
                     row[column] = float(value)
                 except (TypeError, ValueError):
                     logging.warning(
-                        f"Invalid value for '{column}': {value!r}; "
-                        f"using default {default!r}"
+                        f"Invalid value for '{column}': {value!r}; treating as missing"
                     )
-                    row[column] = float(default)
+                    row[column] = np.nan
 
         return pd.DataFrame([row])
     except Exception as e:
@@ -129,48 +139,3 @@ def predict_account(input_data: dict) -> dict:
         return results[0]
     except Exception as e:
         raise CustomException(e, sys)
-
-
-DUMMY_INPUTS = [
-    {
-        # Clearly genuine-looking account
-        "name": "Alice Johnson",
-        "screen_name": "alice_j",
-        "description": "Software engineer. Coffee lover. Opinions are my own.",
-        "location": "New York, USA",
-        "statuses_count": 5400,
-        "followers_count": 1200,
-        "friends_count": 800,
-        "favourites_count": 3100,
-        "listed_count": 12,
-        "default_profile": 0,
-        "default_profile_image": 0,
-        "geo_enabled": 1,
-        "profile_use_background_image": 1,
-        "profile_background_tile": 0,
-        "protected": 0,
-        "verified": 1,
-        "utc_offset": -18000,
-        "lang": "en",
-        "time_zone": "Eastern Time (US & Canada)",
-        "profile_text_color": "333333",
-        "profile_sidebar_border_color": "C0DEED",
-        "profile_sidebar_fill_color": "DDEEF6",
-        "profile_background_color": "C0DEED",
-        "profile_link_color": "0084B4",
-    },
-    {
-        # Clearly fake-looking account (missing most optional fields on
-        # purpose to exercise the default-filling logic)
-        "screen_name": "user_8827361",
-        "statuses_count": 12,
-        "followers_count": 3,
-        "friends_count": 2500,
-        "default_profile": 1,
-        "default_profile_image": 1,
-    },
-    {
-        # Almost entirely empty input -> all defaults applied
-        "name": "Unknown User",
-    },
-]

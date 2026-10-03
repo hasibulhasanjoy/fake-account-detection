@@ -5,7 +5,9 @@ from src.components.model_training import ModelTrainer
 from src.exception import CustomException
 from src.components.data_ingestion import DataIngestion
 from src.components.data_transformation import DataTransformation
-from src.pipeline.predict_pipeline import DUMMY_INPUTS, predict_account
+from src.pipeline.predict_pipeline import predict_account
+
+DUMMY_INPUTS = []
 
 
 def run_training():
