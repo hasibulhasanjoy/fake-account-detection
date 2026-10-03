@@ -31,3 +31,7 @@ Thumbs.db
 models/
 *.pkl
 *.joblib
+
+# ----- my additions -----
+logs/
+artifacts/
