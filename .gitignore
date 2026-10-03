@@ -34,4 +34,4 @@ models/
 
 # ----- my additions -----
 logs/
-artifacts/
+catboost_info/
