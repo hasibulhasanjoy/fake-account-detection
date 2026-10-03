@@ -1,7 +1,7 @@
 import sys
 
-from components.model_training import ModelTrainer
-from exception import CustomException
+from src.components.model_training import ModelTrainer
+from src.exception import CustomException
 from src.components.data_ingestion import DataIngestion
 from src.components.data_transformation import DataTransformation
 
