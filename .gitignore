@@ -35,3 +35,4 @@ models/
 # ----- my additions -----
 logs/
 catboost_info/
+*.ps1
