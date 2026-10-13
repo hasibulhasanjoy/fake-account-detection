@@ -36,6 +36,10 @@ fake-account-detection/
 │   │   └── model_training.py      # Multi-model tuning & selection
 │   ├── pipeline/
 │   │   └── predict_pipeline.py    # Single-account inference
+│   ├── api/
+│   │   ├── main.py                # FastAPI app (routes, lifespan, error handlers)
+│   │   ├── schemas.py             # Pydantic request/response models
+│   │   └── model_service.py       # Loads artifacts once; serves predictions
 │   ├── exception.py               # Custom exception handling
 │   ├── logger.py                  # Logging configuration
 │   └── utils.py                   # save/load objects, model evaluation
@@ -45,6 +49,7 @@ fake-account-detection/
 │   ├── preprocessor.pkl           # Fitted preprocessing pipeline
 │   └── model.pkl                  # Best trained model
 ├── train.py                       # CLI entry point (train / predict)
+├── Makefile                       # Command aliases (train / predict / serve)
 ├── setup.py
 └── requirements.txt
 ```
@@ -90,6 +95,22 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+### Makefile Commands
+
+A `Makefile` in the project root aliases the common commands. Run `make help` to list them:
+
+| Command | What it does |
+|---|---|
+| `make install` | Installs all dependencies (`requirements.txt` + the package itself) |
+| `make train` | Runs the full training pipeline (ingestion → transformation → model tuning → saves artifacts) |
+| `make predict` | Runs the prediction pipeline on dummy input data using the saved model |
+| `make serve` | Starts the FastAPI server with auto-reload (dev mode) at `http://localhost:8000` |
+| `make serve-prod` | Starts the FastAPI server without auto-reload (production mode) |
+
+The server targets accept `HOST` and `PORT` overrides, e.g. `make serve PORT=9000`.
+
+> **Note (Windows):** `make` is not preinstalled on Windows. Install it via [Chocolatey](https://chocolatey.org/) (`choco install make`), [scoop](https://scoop.sh/) (`scoop install make`), or use the equivalent raw commands shown in the sections below.
+
 ### Training
 
 Runs the full pipeline — ingestion, transformation, and model training/tuning — then prints the best model and its accuracy:
@@ -107,6 +128,51 @@ Classifies sample accounts using the saved preprocessor and model:
 ```bash
 python train.py --predict
 ```
+
+### REST API
+
+A FastAPI service wraps the prediction pipeline. The model artifacts are loaded **once at startup**, so predictions are served with no per-request reload cost.
+
+```bash
+# Run from the project root (requires artifacts/model.pkl and artifacts/preprocessor.pkl)
+uvicorn src.api.main:app --reload
+```
+
+Interactive Swagger docs are available at `http://127.0.0.1:8000/docs`.
+
+**Endpoints**
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Service status + whether model artifacts are loaded |
+| POST | `/predict` | Classify a single account |
+| POST | `/predict/batch` | Classify a list of accounts |
+
+**Example — single prediction**
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict ^
+  -H "Content-Type: application/json" ^
+  -d "{\"statuses_count\": 1200, \"followers_count\": 340, \"friends_count\": 280, \"favourites_count\": 50, \"listed_count\": 2, \"verified\": 0, \"lang\": \"en\", \"time_zone\": \"UTC\", \"name\": \"John Doe\", \"screen_name\": \"johndoe\", \"description\": \"Software developer. Coffee enthusiast.\", \"location\": \"New York\"}"
+```
+
+```json
+{
+  "prediction": "Real Account",
+  "fake_probability": 0.0312,
+  "real_probability": 0.9688
+}
+```
+
+**Example — batch prediction**
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict/batch ^
+  -H "Content-Type: application/json" ^
+  -d "[{\"followers_count\": 10, \"friends_count\": 2000, \"verified\": 0, \"screen_name\": \"user8371\"}, {}]"
+```
+
+All request fields are optional — missing or empty values are imputed with the statistics learned during training, exactly like the offline prediction pipeline.
 
 ### Using the Prediction Pipeline in Code
 
